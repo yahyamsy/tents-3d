@@ -6,9 +6,9 @@
 <title>Nested Tents</title>
 <style>
 /* Layout: full-window 3D view only; a one-line hint in the corner */
-:root{ color-scheme:light; --bg:#e7ebee; --surface:rgba(255,255,255,.92); --ink:#141a20; --ink-2:#52606b; --line:#cdd5db; --font:system-ui,-apple-system,"Segoe UI",sans-serif; }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){ color-scheme:dark; --bg:#11161b; --surface:rgba(24,30,37,.92); --ink:#e6ebef; --ink-2:#a3afb9; --line:#2c353e }}
-:root[data-theme="dark"]{ color-scheme:dark; --bg:#11161b; --surface:rgba(24,30,37,.92); --ink:#e6ebef; --ink-2:#a3afb9; --line:#2c353e }
+:root{ color-scheme:light; --bg:#e7ebee; --surface:rgba(255,255,255,.92); --surface-50:rgba(255,255,255,.5); --ink:#141a20; --ink-2:#52606b; --line:#cdd5db; --font:system-ui,-apple-system,"Segoe UI",sans-serif; }
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){ color-scheme:dark; --bg:#11161b; --surface:rgba(24,30,37,.92); --surface-50:rgba(24,30,37,.5); --ink:#e6ebef; --ink-2:#a3afb9; --line:#2c353e }}
+:root[data-theme="dark"]{ color-scheme:dark; --bg:#11161b; --surface:rgba(24,30,37,.92); --surface-50:rgba(24,30,37,.5); --ink:#e6ebef; --ink-2:#a3afb9; --line:#2c353e }
 html,body{margin:0;height:100%}
 body{background:var(--bg);font-family:var(--font);overflow:hidden}
 #view{position:fixed;inset:0;display:block;width:100%;height:100%;touch-action:none}
@@ -24,11 +24,12 @@ body{background:var(--bg);font-family:var(--font);overflow:hidden}
 input:focus-visible,button:focus-visible{outline:2px solid #2a78d6;outline-offset:2px}
 .toggles{max-width:calc(100vw - 28px);width:72px}
 @media (max-width:560px){
-  .toggles{width:80px}
+  .toggles{width:auto}
+  .btns{display:grid;width:max-content}                      /* column as wide as the widest label, buttons equal width */
+  .btns button{background:var(--surface-50);padding:6px 8px}  /* 50% transparent fill on phones */
   .tent{min-height:44px}                                     /* double line spacing on phones */
   .tent input{width:22px;height:22px}
   .tent{grid-template-columns:22px auto}
-  .btns button{padding:6px 10px}
   .hint{left:14px;text-align:right}
 }
 </style>
