@@ -215,7 +215,7 @@ const box = k => document.getElementById('tent' + (k+1));
 // tent7 is special: once the distance left to its top equals tent1's height, every further step is built in tent1's
 // colour and, if tent1 is shown, one 3 m step is removed from the bottom of tent1 - tent1 is moved onto tent7's top.
 function show(t, on){
-  clearInterval(t.timer); t.timer = null;
+  clearTimeout(t.timer); t.timer = null;
   if (!on){ t.group.visible = false; return; }
   const isLast = t === LAST;
   let level = 0, removed = 0;
@@ -225,12 +225,17 @@ function show(t, on){
     t.clipSplit.constant = 1e6; rebuilt.visible = false; t.cap.material.color.set(COLORS[COLORS.length - 1]);
     dismantle = box(0).checked;
     if (dismantle){                                            // finish tent1 instantly if it was still growing
-      clearInterval(FIRST.timer); FIRST.timer = null;
+      clearTimeout(FIRST.timer); FIRST.timer = null;
       FIRST.group.visible = true; FIRST.clip.constant = 1e6; FIRST.cap.visible = false;
       FIRST.clipBottom.constant = 1e6; FIRST.capBottom.visible = false;
     }
   }
-  t.timer = setInterval(() => {
+  // one step per tick; ticks are 0.05 s, or 4x slower (25% speed) while tent1 is being moved onto tent7
+  const tick = () => {
+    step();
+    if (t.timer !== null) t.timer = setTimeout(tick, (isLast && level > SPLIT ? 4 : 1) * GROW_STEP_S * 1000);
+  };
+  const step = () => {
     level += GROW_STEP_M;
     if (isLast && level > SPLIT){                              // above the split: build in tent1's colour, take tent1 down
       t.clipSplit.constant = SPLIT; rebuilt.visible = true; t.cap.material.color.set(COLORS[0]);
@@ -241,12 +246,13 @@ function show(t, on){
       }
     }
     if (level >= t.height){
-      t.clip.constant = 1e6; t.cap.visible = false; clearInterval(t.timer); t.timer = null;
+      t.clip.constant = 1e6; t.cap.visible = false; clearTimeout(t.timer); t.timer = null;
       if (dismantle){ FIRST.group.visible = false; box(0).checked = false; FIRST.clipBottom.constant = 1e6; FIRST.capBottom.visible = false; }
       return;
     }
     t.clip.constant = level; t.setCap(level);
-  }, GROW_STEP_S * 1000);
+  };
+  t.timer = setTimeout(tick, GROW_STEP_S * 1000);
   if (t === FIRST){ t.clipBottom.constant = 1e6; t.capBottom.visible = false; }   // tent1 switched back on: whole again
 }
 const setAll = on => tents.forEach((t, k) => {
