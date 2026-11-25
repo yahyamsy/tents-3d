@@ -43,7 +43,7 @@ input:focus-visible,button:focus-visible{outline:2px solid #2a78d6;outline-offse
   <div class="btns"><button id="all">All on</button><button id="none">All off</button></div>
   <div class="btns"><button data-view="iso">3D</button><button data-view="front">Front</button><button data-view="top">Top</button><button id="panmode" aria-pressed="false" title="When on, one-finger drag (or left-drag) pans instead of orbiting">Pan</button></div>
 </div>
-<div class="hint">Drag: orbit · right-drag or two fingers: pan · scroll or pinch: zoom · Pan button: one-finger pan</div>
+<div class="hint">Mouse: middle-drag orbit · Shift+middle-drag pan · wheel zoom · Touch: 1 finger orbit · 2 fingers pan · pinch zoom</div>
 
 <script>
 /**
@@ -240,28 +240,54 @@ function pan(dx, dy){                                          // slide the view
   const right = V().setFromMatrixColumn(camera.matrixWorld, 0), up = V().setFromMatrixColumn(camera.matrixWorld, 1);
   orbit.target.addScaledVector(right, -dx*k).addScaledVector(up, dy*k);
 }
+// Zoom by `factor` (<1 = closer) keeping the point under the screen position (x, y) fixed, like SketchUp's zoom-to-cursor
+function zoomAt(x, y, factor){
+  camera.updateMatrixWorld();
+  const rect = canvas.getBoundingClientRect();
+  const dir = V(((x - rect.left)/rect.width)*2 - 1, -((y - rect.top)/rect.height)*2 + 1, 0.5).unproject(camera).sub(camera.position).normalize();
+  const fwd = V(); camera.getWorldDirection(fwd);
+  const P = camera.position.clone().addScaledVector(dir, orbit.radius / Math.max(0.05, dir.dot(fwd)));   // cursor ray meets the target's depth
+  factor = Math.min(4000/orbit.radius, Math.max(2/orbit.radius, factor));
+  orbit.target.lerp(P, 1 - factor); orbit.radius *= factor; applyOrbit();
+}
+// Mouse (SketchUp style): middle-drag = orbit, Shift + middle-drag = pan, wheel = zoom to cursor.
+// Extras: left-drag = orbit (touchpads), right-drag = pan, Pan button makes left-drag / one finger pan.
+// Touch: one finger = orbit (or pan with the Pan button); two fingers = pan, unless they pinch -> zoom.
+let two = null;                                                // two-finger gesture: {mode:null|'pan'|'zoom', d0, m0, d, m}
+const midOf = (a, b) => ({x:(a.x+b.x)/2, y:(a.y+b.y)/2});
+const mouseMode = e => {
+  if (e.button === 1 || (e.buttons & 4)) return e.shiftKey ? 'pan' : 'rotate';   // middle button
+  if (e.button === 2 || (e.buttons & 2)) return 'pan';
+  return (panMode || e.shiftKey) ? 'pan' : 'rotate';
+};
+canvas.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });   // no auto-scroll on middle click
 canvas.addEventListener('pointerdown', e => {
   try { canvas.setPointerCapture(e.pointerId); } catch {}
   pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
-  drag = (e.button === 1 || e.button === 2 || e.shiftKey || panMode) ? 'pan' : 'rotate';
-  if (pointers.size === 2){ const [a,b] = [...pointers.values()]; pinch = Math.hypot(a.x-b.x, a.y-b.y); mid = {x:(a.x+b.x)/2, y:(a.y+b.y)/2}; }
+  drag = e.pointerType === 'mouse' ? mouseMode(e) : (panMode ? 'pan' : 'rotate');
+  if (pointers.size === 2){ const [a,b] = [...pointers.values()], d = Math.hypot(a.x-b.x, a.y-b.y), m = midOf(a,b); two = {mode:null, d0:d, m0:m, d, m}; }
 });
 canvas.addEventListener('pointermove', e => {
   const p = pointers.get(e.pointerId); if (!p) return;
   const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
-  if (pointers.size === 2){                                    // two fingers: pinch = zoom, move together = pan
-    const [a,b] = [...pointers.values()], d = Math.hypot(a.x-b.x, a.y-b.y), m = {x:(a.x+b.x)/2, y:(a.y+b.y)/2};
-    if (pinch) orbit.radius *= pinch/d;
-    if (mid) pan(m.x - mid.x, m.y - mid.y);
-    pinch = d; mid = m; applyOrbit(); return;
+  if (pointers.size === 2 && two){
+    const [a,b] = [...pointers.values()], d = Math.hypot(a.x-b.x, a.y-b.y), m = midOf(a,b);
+    if (!two.mode){                                            // decide once per gesture: fingers spreading/closing = zoom, else pan
+      const spread = Math.abs(d - two.d0), slide = Math.hypot(m.x - two.m0.x, m.y - two.m0.y);
+      if (Math.max(spread, slide) > 12) two.mode = spread > slide*1.2 ? 'zoom' : 'pan';
+    }
+    if (two.mode === 'pan'){ pan(m.x - two.m.x, m.y - two.m.y); applyOrbit(); }
+    if (two.mode === 'zoom' && d > 0) zoomAt(m.x, m.y, two.d / d);
+    two.d = d; two.m = m; return;
   }
+  if (e.pointerType === 'mouse') drag = mouseMode(e);          // Shift pressed/released mid-drag switches orbit <-> pan
   if (drag === 'rotate'){ orbit.theta -= dx*0.006; orbit.phi -= dy*0.006; }
   else pan(dx, dy);
   applyOrbit();
 });
 const endPointer = e => {
   pointers.delete(e.pointerId);
-  if (pointers.size < 2){ pinch = 0; mid = null; }
+  if (pointers.size < 2) two = null;
   if (pointers.size === 1) drag = panMode ? 'pan' : 'rotate';  // lifting one of two fingers: carry on without a jump
   if (!pointers.size) drag = null;
 };
@@ -270,7 +296,7 @@ panBtn.addEventListener('click', () => {
   panMode = !panMode; panBtn.setAttribute('aria-pressed', panMode); panBtn.textContent = panMode ? 'Pan: on' : 'Pan';
 });
 canvas.addEventListener('pointerup', endPointer); canvas.addEventListener('pointercancel', endPointer);
-canvas.addEventListener('wheel', e => { e.preventDefault(); orbit.radius *= Math.exp(e.deltaY*0.0012); applyOrbit(); }, {passive:false});
+canvas.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.exp(e.deltaY*0.0012)); }, {passive:false});
 document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
 addEventListener('keydown', e => { if (e.key === '1') setView('iso'); if (e.key === '2') setView('front'); if (e.key === '3') setView('top'); });
 
