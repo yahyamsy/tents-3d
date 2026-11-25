@@ -59,11 +59,11 @@ const SIDE = 30;        // tent1 base: equilateral triangle, side in m
 const HEIGHT = 100;     // tent1 height in m (apex straight above the middle of the open FRONT edge -> front is vertical)
 const WALL = 2.5;       // wall thickness of every tent, m (measured straight across the wall)
 // tent1 is the reference shape; each next tent hugs the previous one (its inside = previous tent's outside)
-// vivid, alternating light / dark: yellow, royal blue, lime, crimson, cyan, deep purple, orange, forest green
-const COLORS = [0xffd21f, 0x1546c8, 0x7be04a, 0xb0122e, 0x3fe0f0, 0x5b1fa8, 0xff8a1a, 0x0f7a2e];   // tent1 .. tent8
+// vivid, alternating light / dark: yellow, royal blue, lime, crimson, cyan, deep purple, orange, forest green, pink
+const COLORS = [0xffd21f, 0x1546c8, 0x7be04a, 0xb0122e, 0x3fe0f0, 0x5b1fa8, 0xff8a1a, 0x0f7a2e, 0xff6fb5];   // tent1 .. tent9
 // rebuild pairs [builder, source] (tent numbers): when the builder grows, its top part (as tall as the source) is built
 // in the source's colour at 25% speed while the source is taken down from the bottom, one step per step
-const REBUILD_PAIRS = [[7, 1], [8, 2]];
+const REBUILD_PAIRS = [[7, 1], [8, 2], [9, 3]];
 
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const canvas = document.getElementById('view');
