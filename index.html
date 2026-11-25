@@ -14,6 +14,7 @@ body{background:var(--bg);font-family:var(--font);overflow:hidden}
 #view{position:fixed;inset:0;display:block;width:100%;height:100%;touch-action:none}
 .hint{position:fixed;right:14px;bottom:10px;font-size:11.5px;color:var(--ink-2)}
 .toggles{position:fixed;top:14px;right:14px;background:none;color:var(--ink);padding:4px 6px;display:grid;gap:4px;font-size:13px;text-shadow:0 0 3px var(--bg),0 0 6px var(--bg)}
+#tents{display:flex;flex-direction:column-reverse}          /* list reads 7 (top) down to 1 */
 .tent{display:grid;grid-template-columns:18px auto;gap:8px;align-items:center;cursor:pointer;min-height:22px}
 .tent .nm{font-weight:600;font-variant-numeric:tabular-nums}
 /* tick box = colour box: always filled with the tent colour; the white tick shows only when the tent is on */
