@@ -64,7 +64,8 @@ const SIDE = 30;        // tent1 base: equilateral triangle, side in m
 const HEIGHT = 100;     // tent1 height in m (apex straight above the middle of the open FRONT edge -> front is vertical)
 const WALL = 2.5;       // wall thickness of every tent, m (measured straight across the wall)
 // tent1 is the reference shape; each next tent hugs the previous one (its inside = previous tent's outside)
-const COLORS = [0xd8c3a0, 0x5f86b8, 0x6fa86a, 0xc8684a, 0x8a6cc9, 0xe0b23a, 0x3fa3a0];   // tent1 .. tent7
+// vivid, alternating light / dark: yellow, royal blue, lime, crimson, cyan, deep purple, orange
+const COLORS = [0xffd21f, 0x1546c8, 0x7be04a, 0xb0122e, 0x3fe0f0, 0x5b1fa8, 0xff8a1a];   // tent1 .. tent7
 
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const canvas = document.getElementById('view');
@@ -74,8 +75,8 @@ renderer.localClippingEnabled = true;                          // used for the g
 const GROW_STEP_M = 3, GROW_STEP_S = 0.05;                     // grow 3 m every 0.05 s
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 5000);
-scene.add(new THREE.HemisphereLight(0xffffff, 0x556655, 0.6));
-const sun = new THREE.DirectionalLight(0xffffff, 0.75); sun.position.set(200, 500, 150); sun.castShadow = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8a80, 1.05));
+const sun = new THREE.DirectionalLight(0xffffff, 0.85); sun.position.set(200, 500, 150); sun.castShadow = true;
 sun.shadow.mapSize.set(2048,2048); sun.shadow.bias = -0.0008; sun.shadow.normalBias = 0.4;
 Object.assign(sun.shadow.camera,{left:-300,right:300,top:300,bottom:-300,near:10,far:1500}); scene.add(sun);
 const groundMat = new THREE.MeshLambertMaterial({color:0xb8c0b2});
@@ -123,7 +124,7 @@ function shell(out, wall, color){
   const geo = new THREE.BufferGeometry().setFromPoints(pts); geo.computeVertexNormals();
   const g = new THREE.Group();
   const clip = new THREE.Plane(V(0,-1,0), 1e6);                // keeps everything below y = clip.constant
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color, roughness:0.85, flatShading:true, side:THREE.DoubleSide,
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color, roughness:0.6, flatShading:true, side:THREE.DoubleSide,
     polygonOffset:true, polygonOffsetFactor:1, polygonOffsetUnits:1, clippingPlanes:[clip], clipShadows:true}));
   mesh.castShadow = true; g.add(mesh);
   g.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 1), new THREE.LineBasicMaterial({color:0x3d342a, clippingPlanes:[clip]})));
@@ -148,13 +149,13 @@ function shell(out, wall, color){
     else stepPts.push(fz(o[0]), fz(o[2]));
   }
   const stepLines = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(stepPts),
-    new THREE.LineBasicMaterial({color:0x000000, transparent:true, opacity:0.22, clippingPlanes:[clip]}));
+    new THREE.LineBasicMaterial({color:0x000000, transparent:true, opacity:0.15, clippingPlanes:[clip]}));
   g.add(stepLines);
 
   // lid that closes the top of the cut while the tent grows, so it looks solid
   const capGeo = new THREE.BufferGeometry();
   capGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12*3), 3));
-  const cap = new THREE.Mesh(capGeo, new THREE.MeshStandardMaterial({color, roughness:0.85, flatShading:true, side:THREE.DoubleSide}));
+  const cap = new THREE.Mesh(capGeo, new THREE.MeshStandardMaterial({color, roughness:0.6, flatShading:true, side:THREE.DoubleSide}));
   cap.visible = false; g.add(cap);
   const setCap = y => {
     const {o, i} = section(y);
@@ -307,7 +308,7 @@ addEventListener('keydown', e => { if (e.key === '1') setView('iso'); if (e.key 
 function applyTheme(){
   scene.background = new THREE.Color(css('--bg'));
   const dark = getComputedStyle(document.documentElement).colorScheme.includes('dark');
-  groundMat.color.set(dark ? 0x2a3129 : 0xb8c0b2); grid.material.color.set(dark ? 0xffffff : 0x000000);
+  groundMat.color.set(dark ? 0x1c221b : 0x5c6855); grid.material.color.set(dark ? 0xffffff : 0x000000);
 }
 function resize(){ renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize);
