@@ -21,6 +21,7 @@ body{background:var(--bg);font-family:var(--font);overflow:hidden}
 .tent .dim{color:var(--ink-2);font-size:12px;font-variant-numeric:tabular-nums}
 .tent input{accent-color:#2a78d6;margin:0}
 .btns{display:flex;gap:6px;margin-top:4px}
+.btns button[aria-pressed="true"]{background:#2a78d6;border-color:#2a78d6;color:#fff}
 .btns button{font:inherit;font-size:12px;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:6px;padding:3px 10px;cursor:pointer}
 input:focus-visible,button:focus-visible{outline:2px solid #2a78d6;outline-offset:2px}
 .toggles{max-width:calc(100vw - 28px)}
@@ -40,9 +41,9 @@ input:focus-visible,button:focus-visible{outline:2px solid #2a78d6;outline-offse
   <b>Show tents</b>
   <div id="tents"></div>
   <div class="btns"><button id="all">All on</button><button id="none">All off</button></div>
-  <div class="btns"><button data-view="iso">3D</button><button data-view="front">Front</button><button data-view="top">Top</button></div>
+  <div class="btns"><button data-view="iso">3D</button><button data-view="front">Front</button><button data-view="top">Top</button><button id="panmode" aria-pressed="false" title="When on, one-finger drag (or left-drag) pans instead of orbiting">Pan</button></div>
 </div>
-<div class="hint">Drag to orbit · right-drag or Shift-drag to pan · scroll or pinch to zoom</div>
+<div class="hint">Drag: orbit · right-drag or two fingers: pan · scroll or pinch: zoom · Pan button: one-finger pan</div>
 
 <script>
 /**
@@ -232,23 +233,42 @@ function setView(v){
 }
 const pointers = new Map(); let drag = null, pinch = 0;
 canvas.addEventListener('contextmenu', e => e.preventDefault());
+let panMode = false, mid = null;                               // panMode: one-finger / left-drag pans instead of orbiting
+function pan(dx, dy){                                          // slide the view sideways / up-down by screen pixels
+  camera.updateMatrixWorld();
+  const k = orbit.radius * 2 * Math.tan(camera.fov * Math.PI / 360) / canvas.clientHeight;   // metres per pixel at the target
+  const right = V().setFromMatrixColumn(camera.matrixWorld, 0), up = V().setFromMatrixColumn(camera.matrixWorld, 1);
+  orbit.target.addScaledVector(right, -dx*k).addScaledVector(up, dy*k);
+}
 canvas.addEventListener('pointerdown', e => {
-  canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
-  drag = (e.button === 2 || e.shiftKey) ? 'pan' : 'rotate';
-  if (pointers.size === 2){ const [a,b] = [...pointers.values()]; pinch = Math.hypot(a.x-b.x, a.y-b.y); }
+  try { canvas.setPointerCapture(e.pointerId); } catch {}
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  drag = (e.button === 1 || e.button === 2 || e.shiftKey || panMode) ? 'pan' : 'rotate';
+  if (pointers.size === 2){ const [a,b] = [...pointers.values()]; pinch = Math.hypot(a.x-b.x, a.y-b.y); mid = {x:(a.x+b.x)/2, y:(a.y+b.y)/2}; }
 });
 canvas.addEventListener('pointermove', e => {
   const p = pointers.get(e.pointerId); if (!p) return;
   const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
-  if (pointers.size === 2){ const [a,b] = [...pointers.values()], d = Math.hypot(a.x-b.x, a.y-b.y); if (pinch) orbit.radius *= pinch/d; pinch = d; applyOrbit(); return; }
-  if (drag === 'rotate'){ orbit.theta -= dx*0.006; orbit.phi -= dy*0.006; }
-  else {
-    const k = orbit.radius*0.0016, right = V().setFromMatrixColumn(camera.matrix, 0), up = V().setFromMatrixColumn(camera.matrix, 1);
-    orbit.target.addScaledVector(right, -dx*k).addScaledVector(up, dy*k);
+  if (pointers.size === 2){                                    // two fingers: pinch = zoom, move together = pan
+    const [a,b] = [...pointers.values()], d = Math.hypot(a.x-b.x, a.y-b.y), m = {x:(a.x+b.x)/2, y:(a.y+b.y)/2};
+    if (pinch) orbit.radius *= pinch/d;
+    if (mid) pan(m.x - mid.x, m.y - mid.y);
+    pinch = d; mid = m; applyOrbit(); return;
   }
+  if (drag === 'rotate'){ orbit.theta -= dx*0.006; orbit.phi -= dy*0.006; }
+  else pan(dx, dy);
   applyOrbit();
 });
-const endPointer = e => { pointers.delete(e.pointerId); if (pointers.size < 2) pinch = 0; if (!pointers.size) drag = null; };
+const endPointer = e => {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2){ pinch = 0; mid = null; }
+  if (pointers.size === 1) drag = panMode ? 'pan' : 'rotate';  // lifting one of two fingers: carry on without a jump
+  if (!pointers.size) drag = null;
+};
+const panBtn = document.getElementById('panmode');
+panBtn.addEventListener('click', () => {
+  panMode = !panMode; panBtn.setAttribute('aria-pressed', panMode); panBtn.textContent = panMode ? 'Pan: on' : 'Pan';
+});
 canvas.addEventListener('pointerup', endPointer); canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('wheel', e => { e.preventDefault(); orbit.radius *= Math.exp(e.deltaY*0.0012); applyOrbit(); }, {passive:false});
 document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
