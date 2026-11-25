@@ -59,8 +59,11 @@ const SIDE = 30;        // tent1 base: equilateral triangle, side in m
 const HEIGHT = 100;     // tent1 height in m (apex straight above the middle of the open FRONT edge -> front is vertical)
 const WALL = 2.5;       // wall thickness of every tent, m (measured straight across the wall)
 // tent1 is the reference shape; each next tent hugs the previous one (its inside = previous tent's outside)
-// vivid, alternating light / dark: yellow, royal blue, lime, crimson, cyan, deep purple, orange
-const COLORS = [0xffd21f, 0x1546c8, 0x7be04a, 0xb0122e, 0x3fe0f0, 0x5b1fa8, 0xff8a1a];   // tent1 .. tent7
+// vivid, alternating light / dark: yellow, royal blue, lime, crimson, cyan, deep purple, orange, forest green
+const COLORS = [0xffd21f, 0x1546c8, 0x7be04a, 0xb0122e, 0x3fe0f0, 0x5b1fa8, 0xff8a1a, 0x0f7a2e];   // tent1 .. tent8
+// rebuild pairs [builder, source] (tent numbers): when the builder grows, its top part (as tall as the source) is built
+// in the source's colour at 25% speed while the source is taken down from the bottom, one step per step
+const REBUILD_PAIRS = [[7, 1], [8, 2]];
 
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const canvas = document.getElementById('view');
@@ -202,58 +205,62 @@ tents.forEach((t, k) => {
   row.querySelector('input').addEventListener('change', e => show(t, e.target.checked));
   list.appendChild(row);
 });
-// ---- tent7 rebuild: its top part (same height as tent1) is built in tent1's colour while tent1 is taken down ----
-const FIRST = tents[0], LAST = tents[tents.length - 1];
-const SPLIT = LAST.height - FIRST.height;                      // height on tent7 where the remaining distance to the top = tent1's height
-const splitKeep = new THREE.Plane(V(0,1,0), -SPLIT);            // keeps y >= SPLIT
-const rebuilt = new THREE.Mesh(LAST.geo, new THREE.MeshStandardMaterial({color:COLORS[0], roughness:0.6, flatShading:true, side:THREE.DoubleSide,
-  polygonOffset:true, polygonOffsetFactor:1, polygonOffsetUnits:1, clippingPlanes:[LAST.clip, splitKeep], clipShadows:true}));
-rebuilt.castShadow = true; rebuilt.visible = false; LAST.group.add(rebuilt);
+// ---- rebuilds: e.g. tent7's top part (as tall as tent1) is built in tent1's colour while tent1 is taken down ----
 const box = k => document.getElementById('tent' + (k+1));
+const REBUILDS = REBUILD_PAIRS.map(([b, s]) => {
+  const T = tents[b-1], S = tents[s-1];
+  const split = T.height - S.height;                           // on the builder: remaining distance to the top = source height
+  const keep = new THREE.Plane(V(0,1,0), -split);              // keeps y >= split
+  const mesh = new THREE.Mesh(T.geo, new THREE.MeshStandardMaterial({color:COLORS[s-1], roughness:0.6, flatShading:true, side:THREE.DoubleSide,
+    polygonOffset:true, polygonOffsetFactor:1, polygonOffsetUnits:1, clippingPlanes:[T.clip, keep], clipShadows:true}));
+  mesh.castShadow = true; mesh.visible = false; T.group.add(mesh);
+  return {T, S, bi:b-1, si:s-1, split, mesh};
+});
 
 // switching ON grows the tent from the ground up in 3 m steps, one step every 0.05 s; switching OFF hides it at once.
-// tent7 is special: once the distance left to its top equals tent1's height, every further step is built in tent1's
-// colour and, if tent1 is shown, one 3 m step is removed from the bottom of tent1 - tent1 is moved onto tent7's top.
+// A builder (tent7, tent8): once the distance left to its top equals its source's height, every further step is built
+// in the source's colour at 25% speed and, if the source is shown, one 3 m step is removed from the source's bottom.
 function show(t, on){
   clearTimeout(t.timer); t.timer = null;
   if (!on){ t.group.visible = false; return; }
-  const isLast = t === LAST;
-  let level = 0, removed = 0;
+  const rb = REBUILDS.find(r => r.T === t);
+  let level = 0, removed = 0, dismantle = false;
   t.clip.constant = 0; t.cap.visible = false; t.group.visible = true;
-  let dismantle = false;
-  if (isLast){
-    t.clipSplit.constant = 1e6; rebuilt.visible = false; t.cap.material.color.set(COLORS[COLORS.length - 1]);
-    dismantle = box(0).checked;
-    if (dismantle){                                            // finish tent1 instantly if it was still growing
-      clearTimeout(FIRST.timer); FIRST.timer = null;
-      FIRST.group.visible = true; FIRST.clip.constant = 1e6; FIRST.cap.visible = false;
-      FIRST.clipBottom.constant = 1e6; FIRST.capBottom.visible = false;
+  t.clipBottom.constant = 1e6; t.capBottom.visible = false;    // switched back on: whole again
+  if (rb){
+    const S = rb.S;
+    t.clipSplit.constant = 1e6; rb.mesh.visible = false; t.cap.material.color.set(COLORS[rb.bi]);
+    dismantle = box(rb.si).checked;
+    if (dismantle){                                            // finish the source instantly if it was still growing
+      clearTimeout(S.timer); S.timer = null;
+      S.group.visible = true; S.clip.constant = 1e6; S.cap.visible = false;
+      S.clipBottom.constant = 1e6; S.capBottom.visible = false;
     }
   }
-  // one step per tick; ticks are 0.05 s, or 4x slower (25% speed) while tent1 is being moved onto tent7
-  const tick = () => {
+  const moving = () => rb && level > rb.split;
+  const tick = () => {                                         // one step per tick: 0.05 s, or 0.2 s (25% speed) while moving
     step();
-    if (t.timer !== null) t.timer = setTimeout(tick, (isLast && level > SPLIT ? 4 : 1) * GROW_STEP_S * 1000);
+    if (t.timer !== null) t.timer = setTimeout(tick, (moving() ? 4 : 1) * GROW_STEP_S * 1000);
   };
   const step = () => {
     level += GROW_STEP_M;
-    if (isLast && level > SPLIT){                              // above the split: build in tent1's colour, take tent1 down
-      t.clipSplit.constant = SPLIT; rebuilt.visible = true; t.cap.material.color.set(COLORS[0]);
+    if (moving()){                                             // above the split: build in the source's colour, take the source down
+      const S = rb.S;
+      t.clipSplit.constant = rb.split; rb.mesh.visible = true; t.cap.material.color.set(COLORS[rb.si]);
       if (dismantle){
         removed += GROW_STEP_M;
-        if (removed >= FIRST.height){ FIRST.group.visible = false; box(0).checked = false; FIRST.capBottom.visible = false; }
-        else { FIRST.clipBottom.constant = -removed; FIRST.capBottom.place(removed); }
+        if (removed >= S.height){ S.group.visible = false; box(rb.si).checked = false; S.capBottom.visible = false; }
+        else { S.clipBottom.constant = -removed; S.capBottom.place(removed); }
       }
     }
     if (level >= t.height){
       t.clip.constant = 1e6; t.cap.visible = false; clearTimeout(t.timer); t.timer = null;
-      if (dismantle){ FIRST.group.visible = false; box(0).checked = false; FIRST.clipBottom.constant = 1e6; FIRST.capBottom.visible = false; }
+      if (dismantle){ const S = rb.S; S.group.visible = false; box(rb.si).checked = false; S.clipBottom.constant = 1e6; S.capBottom.visible = false; }
       return;
     }
     t.clip.constant = level; t.setCap(level);
   };
   t.timer = setTimeout(tick, GROW_STEP_S * 1000);
-  if (t === FIRST){ t.clipBottom.constant = 1e6; t.capBottom.visible = false; }   // tent1 switched back on: whole again
 }
 const setAll = on => tents.forEach((t, k) => {
   const box = document.getElementById('tent'+(k+1));
