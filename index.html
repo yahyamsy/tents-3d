@@ -118,11 +118,13 @@ function shell(out, wall, color){
   const pts = []; for (const q of quads){ pts.push(q[0],q[1],q[2]); if (q.length === 4) pts.push(q[0],q[2],q[3]); }
   const geo = new THREE.BufferGeometry().setFromPoints(pts); geo.computeVertexNormals();
   const g = new THREE.Group();
-  const clip = new THREE.Plane(V(0,-1,0), 1e6);                // keeps everything below y = clip.constant
+  const clip = new THREE.Plane(V(0,-1,0), 1e6);                // top cut: keeps y <= clip.constant (grow animation)
+  const clipBottom = new THREE.Plane(V(0,1,0), 1e6);           // bottom cut: keeps y >= -clipBottom.constant (dismantling)
+  const clipSplit = new THREE.Plane(V(0,-1,0), 1e6);           // colour split: own colour only below this height
   const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color, roughness:0.6, flatShading:true, side:THREE.DoubleSide,
-    polygonOffset:true, polygonOffsetFactor:1, polygonOffsetUnits:1, clippingPlanes:[clip], clipShadows:true}));
+    polygonOffset:true, polygonOffsetFactor:1, polygonOffsetUnits:1, clippingPlanes:[clip, clipBottom, clipSplit], clipShadows:true}));
   mesh.castShadow = true; g.add(mesh);
-  g.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 1), new THREE.LineBasicMaterial({color:0x3d342a, clippingPlanes:[clip]})));
+  g.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 1), new THREE.LineBasicMaterial({color:0x3d342a, clippingPlanes:[clip, clipBottom]})));
 
   // horizontal cross-section of this shell at height y: outer V and (below the inner peak) inner V
   const section = y => {
@@ -144,26 +146,31 @@ function shell(out, wall, color){
     else stepPts.push(fz(o[0]), fz(o[2]));
   }
   const stepLines = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(stepPts),
-    new THREE.LineBasicMaterial({color:0x000000, transparent:true, opacity:0.15, clippingPlanes:[clip]}));
+    new THREE.LineBasicMaterial({color:0x000000, transparent:true, opacity:0.15, clippingPlanes:[clip, clipBottom]}));
   g.add(stepLines);
 
-  // lid that closes the top of the cut while the tent grows, so it looks solid
-  const capGeo = new THREE.BufferGeometry();
-  capGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12*3), 3));
-  const cap = new THREE.Mesh(capGeo, new THREE.MeshStandardMaterial({color, roughness:0.6, flatShading:true, side:THREE.DoubleSide}));
-  cap.visible = false; g.add(cap);
-  const setCap = y => {
-    const {o, i} = section(y);
-    const tris = i ? [o[0],o[1],i[1], o[0],i[1],i[0], o[1],o[2],i[2], o[1],i[2],i[1]]   // two wall sections
-                   : [o[0],o[1],o[2], o[0],o[1],o[2], o[0],o[1],o[2], o[0],o[1],o[2]];  // above the inner peak: solid triangle
-    const arr = capGeo.attributes.position.array;
-    tris.forEach((p, k) => { arr[k*3] = p.x; arr[k*3+1] = y; arr[k*3+2] = p.z; });
-    capGeo.attributes.position.needsUpdate = true; capGeo.computeVertexNormals(); capGeo.computeBoundingSphere();
-    cap.visible = true;
+  // lids that close a horizontal cut so the tent looks solid: top lid while growing, bottom lid while being dismantled
+  const makeLid = () => {
+    const lg = new THREE.BufferGeometry();
+    lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12*3), 3));
+    const lid = new THREE.Mesh(lg, new THREE.MeshStandardMaterial({color, roughness:0.6, flatShading:true, side:THREE.DoubleSide}));
+    lid.visible = false; g.add(lid);
+    lid.place = y => {
+      const {o, i} = section(y);
+      const tris = i ? [o[0],o[1],i[1], o[0],i[1],i[0], o[1],o[2],i[2], o[1],i[2],i[1]]   // two wall sections
+                     : [o[0],o[1],o[2], o[0],o[1],o[2], o[0],o[1],o[2], o[0],o[1],o[2]];  // above the inner peak: solid triangle
+      const arr = lg.attributes.position.array;
+      tris.forEach((p, k) => { arr[k*3] = p.x; arr[k*3+1] = y; arr[k*3+2] = p.z; });
+      lg.attributes.position.needsUpdate = true; lg.computeVertexNormals(); lg.computeBoundingSphere();
+      lid.visible = true;
+    };
+    return lid;
   };
+  const cap = makeLid(), capBottom = makeLid();
 
   scene.add(g);
-  return {group: g, clip, cap, setCap, timer: null, O0,O1,O2,Ao,I0,I1,I2,Ai, side: O1.x - O2.x, height: Ao.y};
+  return {group: g, geo, clip, clipBottom, clipSplit, cap, capBottom, setCap: y => cap.place(y), timer: null,
+          O0,O1,O2,Ao,I0,I1,I2,Ai, side: O1.x - O2.x, height: Ao.y};
 }
 
 const tents = COLORS.map((color, k) => shell(k*WALL, WALL, color));   // tent(k+1) sits directly on tent(k)
@@ -195,17 +202,52 @@ tents.forEach((t, k) => {
   row.querySelector('input').addEventListener('change', e => show(t, e.target.checked));
   list.appendChild(row);
 });
-// switching ON grows the tent from the ground up in 3 m steps, one step every 0.05 s; switching OFF hides it at once
+// ---- tent7 rebuild: its top part (same height as tent1) is built in tent1's colour while tent1 is taken down ----
+const FIRST = tents[0], LAST = tents[tents.length - 1];
+const SPLIT = LAST.height - FIRST.height;                      // height on tent7 where the remaining distance to the top = tent1's height
+const splitKeep = new THREE.Plane(V(0,1,0), -SPLIT);            // keeps y >= SPLIT
+const rebuilt = new THREE.Mesh(LAST.geo, new THREE.MeshStandardMaterial({color:COLORS[0], roughness:0.6, flatShading:true, side:THREE.DoubleSide,
+  polygonOffset:true, polygonOffsetFactor:1, polygonOffsetUnits:1, clippingPlanes:[LAST.clip, splitKeep], clipShadows:true}));
+rebuilt.castShadow = true; rebuilt.visible = false; LAST.group.add(rebuilt);
+const box = k => document.getElementById('tent' + (k+1));
+
+// switching ON grows the tent from the ground up in 3 m steps, one step every 0.05 s; switching OFF hides it at once.
+// tent7 is special: once the distance left to its top equals tent1's height, every further step is built in tent1's
+// colour and, if tent1 is shown, one 3 m step is removed from the bottom of tent1 - tent1 is moved onto tent7's top.
 function show(t, on){
   clearInterval(t.timer); t.timer = null;
   if (!on){ t.group.visible = false; return; }
-  let level = 0;
+  const isLast = t === LAST;
+  let level = 0, removed = 0;
   t.clip.constant = 0; t.cap.visible = false; t.group.visible = true;
+  let dismantle = false;
+  if (isLast){
+    t.clipSplit.constant = 1e6; rebuilt.visible = false; t.cap.material.color.set(COLORS[COLORS.length - 1]);
+    dismantle = box(0).checked;
+    if (dismantle){                                            // finish tent1 instantly if it was still growing
+      clearInterval(FIRST.timer); FIRST.timer = null;
+      FIRST.group.visible = true; FIRST.clip.constant = 1e6; FIRST.cap.visible = false;
+      FIRST.clipBottom.constant = 1e6; FIRST.capBottom.visible = false;
+    }
+  }
   t.timer = setInterval(() => {
     level += GROW_STEP_M;
-    if (level >= t.height){ t.clip.constant = 1e6; t.cap.visible = false; clearInterval(t.timer); t.timer = null; return; }
+    if (isLast && level > SPLIT){                              // above the split: build in tent1's colour, take tent1 down
+      t.clipSplit.constant = SPLIT; rebuilt.visible = true; t.cap.material.color.set(COLORS[0]);
+      if (dismantle){
+        removed += GROW_STEP_M;
+        if (removed >= FIRST.height){ FIRST.group.visible = false; box(0).checked = false; FIRST.capBottom.visible = false; }
+        else { FIRST.clipBottom.constant = -removed; FIRST.capBottom.place(removed); }
+      }
+    }
+    if (level >= t.height){
+      t.clip.constant = 1e6; t.cap.visible = false; clearInterval(t.timer); t.timer = null;
+      if (dismantle){ FIRST.group.visible = false; box(0).checked = false; FIRST.clipBottom.constant = 1e6; FIRST.capBottom.visible = false; }
+      return;
+    }
     t.clip.constant = level; t.setCap(level);
   }, GROW_STEP_S * 1000);
+  if (t === FIRST){ t.clipBottom.constant = 1e6; t.capBottom.visible = false; }   // tent1 switched back on: whole again
 }
 const setAll = on => tents.forEach((t, k) => {
   const box = document.getElementById('tent'+(k+1));
